@@ -8,6 +8,9 @@ import {
 } from "../../common/utils/security/encrypt.security.js";
 import { Compare, Hash } from "../../common/utils/security/hash.security.js";
 import { GenerateToken } from "../../common/utils/token.service.js";
+import { OAuth2Client } from "google-auth-library";
+import { SALT_ROUNDS } from "../../../config/config.service.js";
+const salt_rounds = SALT_ROUNDS
 
 export const signUp = async (req, res, next) => {
   const { userName, email, password, age, gender, phone } = req.body;
@@ -19,13 +22,57 @@ export const signUp = async (req, res, next) => {
     data: {
       userName,
       email,
-      password: Hash({ plainText: password, salt_rounds: 12 }),
+      password: Hash({ plainText: password, salt_rounds }),
       age,
       gender,
       phone: encrypt(phone),
     },
   });
   successResponse({ res, status: 201, data: user });
+};
+
+export const signUpWithGmail = async (req, res, next) => {
+  const { idToken } = req.body;
+
+  const client = new OAuth2Client();
+  console.log(idToken);
+  const ticket = await client.verifyIdToken({
+    idToken,
+    audience:
+      "652811269472-eibp6r7t98acke9lj8pu8kl6iofj32ac.apps.googleusercontent.com",
+  });
+  const payload = ticket.getPayload();
+  const { email, email_verified, name, picture } = payload;
+
+  let user = await db_service.findOne({ model: userModel, filter: { email } });
+  if (!user) {
+    user = await db_service.create({
+      model: userModel,
+      data: {
+        email,
+        confirmed: email_verified,
+        userName: name,
+        profilePicture: picture,
+        provider: ProviderEnum.google,
+      },
+    });
+  }
+
+  if (user.provider == ProviderEnum.system) {
+    throw new Error("Please log in on system only", { cause: 400 });
+  }
+
+  const access_token = GenerateToken({
+    payload: { id: user._id, email: user.email },
+    secret_key: SECRET_KEY,
+    options: { expiresIn: "1h" },
+  });
+  successResponse({
+    res,
+    status: 200,
+    message: "Login Successfully...",
+    data: { access_token },
+  });
 };
 
 export const signIn = async (req, res, next) => {
@@ -42,7 +89,7 @@ export const signIn = async (req, res, next) => {
   }
   const access_token = GenerateToken({
     payload: { id: user._id, email: user.email },
-    secret_key: "12h%56b8@123456hhs0y123456789012",
+    secret_key: process.env.SECRET_KEY,
     options: { expiresIn: "1h" },
   });
   successResponse({
