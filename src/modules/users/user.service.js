@@ -10,25 +10,40 @@ import { Compare, Hash } from "../../common/utils/security/hash.security.js";
 import { GenerateToken } from "../../common/utils/token.service.js";
 import { OAuth2Client } from "google-auth-library";
 import { SALT_ROUNDS } from "../../../config/config.service.js";
-const salt_rounds = SALT_ROUNDS
+import cloudinary from "../../common/utils/cloudinary.js";
+const salt_rounds = SALT_ROUNDS;
 
 export const signUp = async (req, res, next) => {
   const { userName, email, password, age, gender, phone } = req.body;
   if (await db_service.findOne({ model: userModel, filter: { email } })) {
     throw new Error("Email already exist");
   }
+
+  const { secure_url, public_id } = await cloudinary.uploader.upload(
+    req.file.path,
+    {
+      folder: "Saraha_App/users",
+    },
+  );
+  // let arr_paths = [];
+  // for (const file of req.files?.attachments) {
+  //   arr_paths.push(file.path);
+  // }
+
   const user = await db_service.create({
     model: userModel,
     data: {
       userName,
       email,
       password: Hash({ plainText: password, salt_rounds }),
-      age,
       gender,
       phone: encrypt(phone),
+      profilePicture: { secure_url, public_id },
+      // coverPictures: arr_paths,
     },
   });
-  successResponse({ res, status: 201, data: user });
+
+  successResponse({ res, status: 201, data: data });
 };
 
 export const signUpWithGmail = async (req, res, next) => {
@@ -100,10 +115,40 @@ export const signIn = async (req, res, next) => {
   });
 };
 
-export const getProfile = async (req, res, next) => {
+export const getProfile = async (req, res, next) => {};
+
+export const refreshToken = async (req, res, next) => {
+  const { authorization } = req.body;
+  if (!authorization) {
+    throw new Error("Token not exist");
+  }
+  const decoded = VerifyToken({
+    payload: token,
+    secret_key: REFRESH_SECRET_KEY,
+  });
+  if (!decoded || !decoded.id) {
+    throw new Error("InValid token");
+  }
+  const user = await db_service.findById({
+    model: userModel,
+    id: decoded.id,
+    select: "-password",
+  });
+  if (!user) {
+    throw new Error("User not exist", { cause: 400 });
+  }
+  const access_token = GenerateToken({
+    payload: {
+      id: user._id,
+      email: user.email,
+    },
+    secret_key: ACCESS_SECRET_KEY,
+    options: {
+      expiresIn: 60 * 5,
+    },
+  });
   successResponse({
     res,
-    status: 200,
-    data: { ...req.user._doc, phone: decrypt(req.user.phone) },
+    data: { access_token },
   });
 };

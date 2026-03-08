@@ -10,6 +10,7 @@ const bootstrap = () => {
   app.use(cors(), express.json());
   app.get("/", (req, res) => res.send("Welcome In Sticky Note!"));
   checkConnectionDB();
+  app.use("/uploads", express.static("uploads")); 
   app.use("/users", userRouter);
   app.use("{/*demo}", (req, res, next) => {
     throw new Error(`Url ${req.originalUrl} Not Found!`, { cause: 404 });
