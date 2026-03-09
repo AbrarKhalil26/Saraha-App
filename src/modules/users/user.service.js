@@ -9,8 +9,13 @@ import {
 import { Compare, Hash } from "../../common/utils/security/hash.security.js";
 import { GenerateToken } from "../../common/utils/token.service.js";
 import { OAuth2Client } from "google-auth-library";
-import { SALT_ROUNDS } from "../../../config/config.service.js";
+import {
+  ACCESS_SECRET_KEY,
+  PREFIX,
+  SALT_ROUNDS,
+} from "../../../config/config.service.js";
 import cloudinary from "../../common/utils/cloudinary.js";
+import revokeTokenModel from "../../DB/models/revokeToken.model.js";
 const salt_rounds = SALT_ROUNDS;
 
 export const signUp = async (req, res, next) => {
@@ -104,24 +109,32 @@ export const signIn = async (req, res, next) => {
   }
   const access_token = GenerateToken({
     payload: { id: user._id, email: user.email },
-    secret_key: process.env.SECRET_KEY,
-    options: { expiresIn: "1h" },
+    secret_key: ACCESS_SECRET_KEY,
+    options: { expiresIn: 60 * 5 },
+  });
+  const refresh_token = GenerateToken({
+    payload: { id: user._id, email: user.email },
+    secret_key: REFRESH_SECRET_KEY,
+    options: { expiresIn: "1y" },
   });
   successResponse({
     res,
     status: 200,
     message: "Login Successfully...",
-    data: { access_token },
+    data: { access_token, refresh_token },
   });
 };
 
-export const getProfile = async (req, res, next) => {};
-
 export const refreshToken = async (req, res, next) => {
-  const { authorization } = req.body;
+  const { authorization } = req.headers;
   if (!authorization) {
-    throw new Error("Token not exist");
+    throw new Error("Token not found");
   }
+  const [prefix, token] = authorization.split(" ");
+  if (prefix !== PREFIX) {
+    throw new Error("Invalid token prefix");
+  }
+
   const decoded = VerifyToken({
     payload: token,
     secret_key: REFRESH_SECRET_KEY,
@@ -129,7 +142,7 @@ export const refreshToken = async (req, res, next) => {
   if (!decoded || !decoded.id) {
     throw new Error("InValid token");
   }
-  const user = await db_service.findById({
+  const user = await db_service.findOne({
     model: userModel,
     id: decoded.id,
     select: "-password",
@@ -151,4 +164,46 @@ export const refreshToken = async (req, res, next) => {
     res,
     data: { access_token },
   });
+};
+
+export const logout = async (req, res, next) => {
+  const { flag } = req.query;
+  if (flag === "all") {
+    req.user.changeCredential = new Date();
+    await req.user.save();
+    await db_service.deleteMany({
+      model: revokeTokenModel,
+      filter: {
+        userId: req.user._id,
+      },
+    });
+  } else {
+    await db_service.create({
+      model: revokeTokenModel,
+      data: {
+        tokenId: req.decoded.jti,
+        userId: req.user._id,
+        expiredAt: new Date(req.decoded.exp * 1000),
+      },
+    });
+  }
+  successResponse({ req });
+};
+
+export const getProfile = async (req, res, next) => {
+  successResponse({ res, data: req.user });
+};
+
+export const shareProfile = async (req, res, next) => {
+  const { id } = req.params;
+  const user = await db_service.findById({
+    model: userModel,
+    id,
+    select: "-password",
+  });
+  if (!user) {
+    throw new Error("User not exist", { cause: 400 });
+  }
+  user.phone = decrypt(user.phone); 
+  successResponse({ res, data: req.user });  
 };
