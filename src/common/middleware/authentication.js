@@ -2,7 +2,7 @@ import { VerifyToken } from "../utils/token.service.js";
 import * as db_service from "../../DB/db.service.js";
 import userModel from "../../DB/models/user.model.js";
 import revokeTokenModel from "../../DB/models/revokeToken.model.js";
-import { PREFIX } from "../../../config/config.service.js";
+import { ACCESS_SECRET_KEY, PREFIX } from "../../../config/config.service.js";
 
 export const authentication = async (req, res, next) => {
   const { authorization } = req.headers;
@@ -18,12 +18,11 @@ export const authentication = async (req, res, next) => {
     secret_key: ACCESS_SECRET_KEY,
   });
   if (!decoded || !decoded.id) {
-    throw new Error("InValid token");
+    throw new Error("InValid token payload");
   }
   const user = await db_service.findById({
     model: userModel,
     id: decoded.id,
-    select: "-password",
   });
   if (!user) {
     throw new Error("User not exist", { cause: 400 });
@@ -33,10 +32,7 @@ export const authentication = async (req, res, next) => {
   }
   const revokeToken = await db_service.findOne({
     model: revokeTokenModel,
-    filter: {
-      tokenId: decoded.jti,
-      userId: decoded.id,
-    },
+    filter: { tokenId: decoded.jti },
   });
   if (revokeToken) throw new Error("Invalid token revoked");
   req.user = user;

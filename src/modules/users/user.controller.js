@@ -11,20 +11,35 @@ import { multer_enum } from "../../common/enum/multer.enum.js";
 const userRouter = Router();
 userRouter.post(
   "/signup",
-  multer_local(multer_enum.image).fields([
-    { name: "profileImage", maxCount: 1 },
-  ]),
+  multer_host(multer_enum.image).single("profileImage"),
   validation(UV.signUpSchema),
   US.signUp,
-); 
+);
 userRouter.post("/signup/gmail", US.signUpWithGmail);
-userRouter.post("/signin",validation(UV.signInSchema), US.signIn);
+userRouter.post("/signin", validation(UV.signInSchema), US.signIn);
 userRouter.get("/refresh-token", US.refreshToken);
 userRouter.get(
   "/profile",
   authentication,
-  authorization([RoleEnum.user]),
+  // authorization([RoleEnum.user]),
   US.getProfile,
 );
-userRouter.get("/share-profile/:id",validation(UV.shareProfileSchema) , US.shareProfile);
+userRouter.patch(
+  "/update-profile",
+  authentication,
+  validation(UV.updateProfileSchema),
+  US.updateProfile,
+);
+userRouter.patch(
+  "/update-password",
+  authentication,
+  validation(UV.updatePasswordSchema),
+  US.updatePassword, 
+);
+userRouter.get(
+  "/share-profile/:id",
+  validation(UV.shareProfileSchema),
+  US.shareProfile,
+);
+userRouter.post("/logout", authentication, US.logout);
 export default userRouter;

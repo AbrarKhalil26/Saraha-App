@@ -52,15 +52,16 @@ const userSchema = new mongoose.Schema(
     },
     phone: { type: String },
     profilePicture: {
-      secure_url: { type: String, required: true },
-      public_id: { type: String, required: true },
+      secure_url: String,
+      public_id: String,
     },
     coverPictures: [
       {
-        secure_url: { type: String, required: true },
-        public_id: { type: String, required: true },
+        secure_url: String,
+        public_id: String,
       },
     ],
+    changeCredential: Date,
     confirmed: Boolean,
   },
   {
