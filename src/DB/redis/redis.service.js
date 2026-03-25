@@ -1,10 +1,19 @@
 import { redisClient } from "./redis.db.js";
 
 export const revoked_key = ({userId, jti}) => {
-  return `revoke_token:${userId}::${jti}`
+  return `revoke_token::${userId}::${jti}`
 }
 export const get_key = (userId) => {
-  return `revoke_token:${userId}`
+  return `revoke_token::${userId}`
+}
+export const otp_key = (email) => {
+  return `otp::${email}`
+}
+export const max_otp_key = (email) => {
+  return `${otp_key(email)}::max_tries`
+}
+export const block_otp_key = (email) => {
+  return `${otp_key(email)}::block`
 }
 
 export const set = async ({ key, value, ttl } = {}) => {
@@ -71,5 +80,13 @@ export const ttl = async (key) => {
     return await redisClient.ttl(key);
   } catch (error) {
     console.log("Error to update data in redis", error);
+  }
+};
+
+export const incr = async (key) => {
+  try {
+    return await redisClient.incr(key);
+  } catch (error) {
+    console.log("Error to increment operation in redis", error);
   }
 };

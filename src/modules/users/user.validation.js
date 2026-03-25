@@ -17,7 +17,20 @@ export const signUpSchema = {
     .messages({
       "any.required": "body must not be empty",
     }),
-  file:general_rules.file.required(),
+  file: general_rules.file.required(),
+};
+
+export const confirmEmailSchema = {
+  body: Joi.object({
+    email: general_rules.email.required(),
+    otp: Joi.string().length(6).regex(/^[0-9]{6}$/).required(),
+  }).required(),
+};
+
+export const resendOtpSchema = {
+  body: Joi.object({
+    email: general_rules.email.required(),
+  }).required(),
 };
 
 export const signInSchema = {

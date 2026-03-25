@@ -1,7 +1,6 @@
 import { VerifyToken } from "../utils/token.service.js";
 import * as db_service from "../../DB/db.service.js";
 import userModel from "../../DB/models/user.model.js";
-import revokeTokenModel from "../../DB/models/revokeToken.model.js";
 import { ACCESS_SECRET_KEY, PREFIX } from "../../../config/config.service.js";
 
 export const authentication = async (req, res, next) => {
@@ -30,11 +29,6 @@ export const authentication = async (req, res, next) => {
   if (user?.changeCredential?.getTime() > decoded.iat * 1000) {
     throw new Error("Invalid token");
   }
-  const revokeToken = await db_service.findOne({
-    model: revokeTokenModel,
-    filter: { tokenId: decoded.jti },
-  });
-  if (revokeToken) throw new Error("Invalid token revoked");
   req.user = user;
   req.decoded = decoded;
   next();

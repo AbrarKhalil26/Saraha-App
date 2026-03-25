@@ -16,9 +16,19 @@ import {
   SALT_ROUNDS,
 } from "../../../config/config.service.js";
 import cloudinary from "../../common/utils/cloudinary.js";
-import revokeTokenModel from "../../DB/models/revokeToken.model.js";
 import { randomUUID } from "crypto";
-import { deleteKey, get, get_key, keys, set } from "../../DB/redis/redis.service.js";
+import {
+  block_otp_key,
+  deleteKey,
+  get,
+  get_key,
+  incr,
+  keys,
+  max_otp_key,
+  otp_key,
+  set,
+} from "../../DB/redis/redis.service.js";
+import { generateOTP, sendEmail } from "../../common/utils/email/send.email.js";
 const salt_rounds = SALT_ROUNDS;
 
 export const signUp = async (req, res, next) => {
@@ -26,7 +36,6 @@ export const signUp = async (req, res, next) => {
   if (await db_service.findOne({ model: userModel, filter: { email } })) {
     throw new Error("Email already exist");
   }
-
   const { secure_url, public_id } = await cloudinary.uploader.upload(
     req.file.path,
     {
@@ -37,7 +46,6 @@ export const signUp = async (req, res, next) => {
   // for (const file of req.file?.profileImage) {
   //   arr_paths.push(file.path);
   // }
-
   const user = await db_service.create({
     model: userModel,
     data: {
@@ -50,8 +58,91 @@ export const signUp = async (req, res, next) => {
       // coverPictures: arr_paths,
     },
   });
-
+  const otp = await generateOTP();
+  await sendEmail({
+    to: email,
+    subject: "Welcome",
+    html: `<h1>Hello ${userName}</h1>
+    <p>Welcome to saraha app , your otp is: ${otp}</p>`,
+  });
+  await set({
+    key: otp_key(email),
+    value: Hash({ plainText: `${otp}` }),
+    ttl: 60 * 2,
+  });
+  await set({
+    key: max_otp_key(email),
+    value: 1,
+    ttl: 30,
+  });
   successResponse({ res, status: 201, data: user });
+};
+
+export const confirmEmail = async (req, res, next) => {
+  const { email, otp } = req.body;
+  const otpExist = await get(otp_key(email));
+
+  if (!otpExist) throw new Error("OTP Expired");
+  if (!Compare({ plainText: otp, cipherText: otpExist }))
+    throw new Error("Invalid OTP");
+
+  const user = await db_service.findOneAndUpdate({
+    model: userModel,
+    filter: {
+      email,
+      confirmed: { $exists: false },
+      provider: ProviderEnum.system,
+    },
+    update: { confirmed: true },
+  });
+  if (!user) throw new Error("User not exist");
+  await deleteKey(otp_key(email));
+  successResponse({ res, message: "Email confirmed successfully", data: user });
+};
+
+export const resendOtp = async (req, res, next) => {
+  const { email } = req.body;
+  const user = await db_service.findOne({
+    model: userModel,
+    filter: {
+      email,
+      confirmed: { $exists: false },
+      provider: ProviderEnum.system,
+    },
+  });
+  if (!user) throw new Error("User not exist or already confirmed");
+
+  const isBlocked = await ttl(block_otp_key(email));
+  if (isBlocked > 0)
+    throw new Error(`you are blocked, please try again after ${isBlocked} seconds`);
+
+  const otpTTL = await ttl(otp_key(email));
+  if (otpTTL > 0) throw new Error(`you can resend otp after ${otpTTL} seconds`);
+
+  const maxOtp = await get(max_otp_key({ email }));
+  if (maxOtp >= 3) {
+    await set({
+      key: block_otp_key(email),
+      value: 1,
+      ttl: 60,
+    });
+    throw new Error(`you have exceeded the maximum number of tries`);
+  }
+
+  const otp = await generateOTP();
+  await sendEmail({
+    to: user.email,
+    subject: "Welcome",
+    html: `<h1>Hello ${user.userName}</h1>
+    <p>Welcome to saraha app , your otp is: ${otp}</p>`,
+  });
+  await set({
+    key: otp_key(email),
+    value: Hash({ plainText: `${otp}` }),
+    ttl: 60 * 2,
+  });
+  await incr(max_otp_key(email))
+  successResponse({ res, message: "Email confirmed successfully", data: user });
 };
 
 export const signUpWithGmail = async (req, res, next) => {

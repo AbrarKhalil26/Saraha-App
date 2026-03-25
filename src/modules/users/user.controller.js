@@ -15,6 +15,16 @@ userRouter.post(
   validation(UV.signUpSchema),
   US.signUp,
 );
+userRouter.post(
+  "/verify-email",
+  validation(UV.confirmEmailSchema),
+  US.confirmEmail,
+);
+userRouter.post(
+  "/resend-otp",
+  validation(UV.resendOtpSchema),
+  US.confirmEmail,
+);
 userRouter.post("/signup/gmail", US.signUpWithGmail);
 userRouter.post("/signin", validation(UV.signInSchema), US.signIn);
 userRouter.get("/refresh-token", US.refreshToken);
@@ -34,7 +44,7 @@ userRouter.patch(
   "/update-password",
   authentication,
   validation(UV.updatePasswordSchema),
-  US.updatePassword, 
+  US.updatePassword,
 );
 userRouter.get(
   "/share-profile/:id",
