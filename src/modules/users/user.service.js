@@ -24,12 +24,54 @@ import {
   get_key,
   incr,
   keys,
+  login_attempts_key,
+  login_block_key,
   max_otp_key,
   otp_key,
   set,
+  ttl,
 } from "../../DB/redis/redis.service.js";
 import { generateOTP, sendEmail } from "../../common/utils/email/send.email.js";
+import { eventEmitter } from "../../common/utils/email/email.events.js";
+import { emailEnum } from "../../common/enum/email.enum.js";
 const salt_rounds = SALT_ROUNDS;
+
+const sendEmailOtp = async (email, userName) => {
+  const isBlocked = await ttl(block_otp_key(email));
+  if (isBlocked > 0)
+    throw new Error(
+      `you are blocked, please try again after ${isBlocked} seconds`,
+    );
+
+  const otpTTL = await ttl(otp_key(email));
+  if (otpTTL > 0) throw new Error(`you can resend otp after ${otpTTL} seconds`);
+
+  const maxOtp = await get(max_otp_key({ email }));
+  if (maxOtp >= 3) {
+    await set({
+      key: block_otp_key(email),
+      value: 1,
+      ttl: 60,
+    });
+    throw new Error(`you have exceeded the maximum number of tries`);
+  }
+
+  const otp = await generateOTP();
+  eventEmitter.emit(emailEnum.confirmEmail, async () => {
+    await sendEmail({
+      to: email,
+      subject: "Welcome",
+      html: `<h1>Hello ${userName}</h1>
+      <p>Welcome to saraha app , your otp is: ${otp}</p>`,
+    });
+    await set({
+      key: otp_key(email),
+      value: Hash({ plainText: `${otp}` }),
+      ttl: 60 * 2,
+    });
+    await incr(max_otp_key(email));
+  });
+};
 
 export const signUp = async (req, res, next) => {
   const { userName, email, password, gender, phone } = req.body;
@@ -111,37 +153,7 @@ export const resendOtp = async (req, res, next) => {
     },
   });
   if (!user) throw new Error("User not exist or already confirmed");
-
-  const isBlocked = await ttl(block_otp_key(email));
-  if (isBlocked > 0)
-    throw new Error(`you are blocked, please try again after ${isBlocked} seconds`);
-
-  const otpTTL = await ttl(otp_key(email));
-  if (otpTTL > 0) throw new Error(`you can resend otp after ${otpTTL} seconds`);
-
-  const maxOtp = await get(max_otp_key({ email }));
-  if (maxOtp >= 3) {
-    await set({
-      key: block_otp_key(email),
-      value: 1,
-      ttl: 60,
-    });
-    throw new Error(`you have exceeded the maximum number of tries`);
-  }
-
-  const otp = await generateOTP();
-  await sendEmail({
-    to: user.email,
-    subject: "Welcome",
-    html: `<h1>Hello ${user.userName}</h1>
-    <p>Welcome to saraha app , your otp is: ${otp}</p>`,
-  });
-  await set({
-    key: otp_key(email),
-    value: Hash({ plainText: `${otp}` }),
-    ttl: 60 * 2,
-  });
-  await incr(max_otp_key(email))
+  await sendEmailOtp(email, user.userName);
   successResponse({ res, message: "Email confirmed successfully", data: user });
 };
 
@@ -191,16 +203,34 @@ export const signUpWithGmail = async (req, res, next) => {
 
 export const signIn = async (req, res, next) => {
   const { email, password } = req.body;
+  const isBlocked = await ttl(login_block_key(email));
+  if (isBlocked > 0)
+    throw new Error(
+      `Account temporarily banned. Try again after ${isBlocked} seconds`,
+    );
+
   const user = await db_service.findOne({
     model: userModel,
     filter: { email, provider: ProviderEnum.system },
   });
-  if (!user) {
-    throw new Error("User not exist");
-  }
+  if (!user) throw new Error("User not exist");
+
   if (!Compare({ plainText: password, cipherText: user.password })) {
-    throw new Error("Invalid Password", { cause: 409 });
+    await incr(login_attempts_key(email));
+    const attempts = await get(login_attempts_key(email));
+    if (attempts === 1)
+      await set({ key: login_attempts_key(email), value: 1, ttl: 60 * 5 });
+    if (attempts >= 5) {
+      await set({ key: login_block_key(email), value: 1, ttl: 60 * 5 });
+      await deleteKey(login_attempts_key(email));
+      throw new Error(
+        "Account banned for 5 minutes due to too many failed attempts",
+      );
+    }
+    throw new Error(`Invalid Password. ${5 - attempts} attempts remaining`);
   }
+  await deleteKey(login_attempts_key(email));
+
   const jwtid = randomUUID();
   const access_token = GenerateToken({
     payload: { id: user._id, email: user.email },
@@ -217,6 +247,72 @@ export const signIn = async (req, res, next) => {
     status: 200,
     message: "Login Successfully...",
     data: { access_token, refresh_token },
+  });
+};
+
+export const enable2Step = async (req, res, next) => {
+  const { email } = req.body;
+  const user = await db_service.findOne({
+    model: userModel,
+    filter: { email },
+  });
+  if (user.twoStepVerification)
+    throw new Error("2-step verification already enabled");
+  // check in otp expire, blocked email, max tries
+  const isBlocked = await ttl(block_otp_key(email));
+  if (isBlocked > 0)
+    throw new Error(
+      `you are blocked, please try again after ${isBlocked} seconds`,
+    );
+  const otpTTL = await ttl(otp_key(email));
+  if (otpTTL > 0) throw new Error(`you can resend otp after ${otpTTL} seconds`);
+  const maxOtp = await get(max_otp_key({ email }));
+  if (maxOtp >= 3) {
+    await set({
+      key: block_otp_key(email),
+      value: 1,
+      ttl: 60,
+    });
+    throw new Error(`you have exceeded the maximum number of tries`);
+  }
+  // Generate OTP
+  const otp = await generateOTP();
+  await sendEmail({
+    to: email,
+    subject: "2-Step Verification",
+    html: `<h1>Hello ${user.userName}</h1>
+         <p>Your OTP to enable 2-step verification: <b>${otp}</b></p>`,
+  });
+  await set({
+    key: otp_key(email),
+    value: Hash({ plainText: `${otp}` }),
+    ttl: 60 * 2,
+  });
+  await incr(max_otp_key(email));
+
+  successResponse({ res, message: "OTP sent to your email" });
+};
+
+export const verify2Step = async (req, res, next) => {
+  const { email, otp } = req.body;
+
+  const otpExist = await get(otp_key(email));
+  if (!otpExist) throw new Error("OTP Expired");
+  if (!Compare({ plainText: `${otp}`, cipherText: otpExist }))
+    throw new Error("Invalid OTP");
+
+  const user = await db_service.findOneAndUpdate({
+    model: userModel,
+    filter: { email },
+    update: { twoStepVerification: true },
+  });
+  await deleteKey(otp_key(email));
+  await deleteKey(max_otp_key(email));
+
+  successResponse({
+    res,
+    message: "2-step verification enabled successfully",
+    data: user,
   });
 };
 
@@ -277,6 +373,9 @@ export const logout = async (req, res, next) => {
   successResponse({ res });
 };
 
+// ---------------------------------------------------
+// Profile
+// ---------------------------------------------------
 export const getProfile = async (req, res, next) => {
   const key = `profile::${req.user._id}`;
   const userExist = await get(key);

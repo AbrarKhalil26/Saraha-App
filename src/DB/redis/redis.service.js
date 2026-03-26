@@ -1,20 +1,14 @@
 import { redisClient } from "./redis.db.js";
 
-export const revoked_key = ({userId, jti}) => {
-  return `revoke_token::${userId}::${jti}`
-}
-export const get_key = (userId) => {
-  return `revoke_token::${userId}`
-}
-export const otp_key = (email) => {
-  return `otp::${email}`
-}
-export const max_otp_key = (email) => {
-  return `${otp_key(email)}::max_tries`
-}
-export const block_otp_key = (email) => {
-  return `${otp_key(email)}::block`
-}
+export const revoked_key = ({ userId, jti }) =>
+  `revoke_token::${userId}::${jti}`;
+export const get_key = (userId) => `revoke_token::${userId}`;
+export const otp_key = (email) => `otp::${email}`;
+export const max_otp_key = (email) => `${otp_key(email)}::max_tries`;
+export const block_otp_key = (email) => `${otp_key(email)}::block`;
+
+export const login_attempts_key = (email) => `login::attempts::${email}`;
+export const login_block_key = (email) => `login::block::${email}`;
 
 export const set = async ({ key, value, ttl } = {}) => {
   try {

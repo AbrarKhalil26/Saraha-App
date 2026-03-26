@@ -61,6 +61,10 @@ const userSchema = new mongoose.Schema(
         public_id: String,
       },
     ],
+    twoStepVerification: {
+      type: Boolean,
+      default: false,
+    },
     changeCredential: Date,
     confirmed: Boolean,
   },

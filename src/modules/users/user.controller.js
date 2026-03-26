@@ -20,13 +20,15 @@ userRouter.post(
   validation(UV.confirmEmailSchema),
   US.confirmEmail,
 );
-userRouter.post(
-  "/resend-otp",
-  validation(UV.resendOtpSchema),
-  US.confirmEmail,
-);
+userRouter.post("/resend-otp", validation(UV.resendOtpSchema), US.confirmEmail);
 userRouter.post("/signup/gmail", US.signUpWithGmail);
 userRouter.post("/signin", validation(UV.signInSchema), US.signIn);
+userRouter.post("/enable-two-step", authentication, US.enable2Step);
+userRouter.post("/verify-two-step", authentication, US.verify2Step);
+
+// ---------------------------------------------------
+// Profile
+// ---------------------------------------------------
 userRouter.get("/refresh-token", US.refreshToken);
 userRouter.get(
   "/profile",
