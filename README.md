@@ -34,14 +34,41 @@ Anonymous messaging apps are widely used to collect honest opinions and feedback
 - JWT Authentication
 - Bcrypt (Password Hashing)
 
-### 🔹 Frontend
-- React.js / Next.js
-- Tailwind CSS
-
 ### 🔹 Tools
 - Postman
 - Git & GitHub
 
 ---
 
-## 📂 Project Structure
+## 🔐 Authentication Flow
+
+1. User registers with email & password
+2. Password is hashed using bcrypt
+3. JWT token is generated upon login
+4. Protected routes require valid token
+
+---
+
+## 📬 How It Works
+
+- Each user gets a unique profile link
+- Anyone with the link can send anonymous messages
+- Messages are stored securely in the database
+- Receiver can view messages without knowing the sender
+
+---
+
+## ⚙️ Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/AbrarKhalil26/Saraha-App.git
+
+# Navigate to project
+cd Saraha-App
+
+# Install dependencies
+npm install
+
+# Run the server
+npm run dev
