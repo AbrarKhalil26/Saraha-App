@@ -1,4 +1,5 @@
 import { Router } from "express";
+import messageRouter from "../messages/message.controller.js";
 import * as US from "./user.service.js";
 import * as UV from "./user.validation.js";
 import { validation } from "../../common/middleware/validation.js";
@@ -8,7 +9,8 @@ import { multer_host, multer_local } from "../../common/middleware/multer.js";
 import { RoleEnum } from "../../common/enum/user.enum.js";
 import { multer_enum } from "../../common/enum/multer.enum.js";
 
-const userRouter = Router();
+const userRouter = Router({caseSensitive: true, strict:true});
+userRouter.use("/:userId/messages", messageRouter)
 userRouter.post(
   "/signup",
   multer_host(multer_enum.image).single("profileImage"),
@@ -25,6 +27,16 @@ userRouter.post("/signup/gmail", US.signUpWithGmail);
 userRouter.post("/signin", validation(UV.signInSchema), US.signIn);
 userRouter.post("/enable-two-step", authentication, US.enable2Step);
 userRouter.post("/verify-two-step", authentication, US.verify2Step);
+userRouter.patch(
+  "/forget-password",
+  validation(UV.resendOtpSchema),
+  US.forgetPassword,
+);
+userRouter.patch(
+  "/reset-password",
+  validation(UV.resetPasswordSchema),
+  US.resetPassword,
+);
 
 // ---------------------------------------------------
 // Profile
